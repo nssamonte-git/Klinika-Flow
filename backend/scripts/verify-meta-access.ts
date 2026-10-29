@@ -1,0 +1,11 @@
+import { mkdirSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { verifyMetaAccess } from "../src/server/verify-meta-access";
+const report = await verifyMetaAccess();
+const folder = resolve("backend/eval/runs"); mkdirSync(folder, { recursive: true });
+const path = resolve(folder, `${new Date().toISOString().replace(/[:.]/g, "-")}-model-access.json`);
+writeFileSync(path, JSON.stringify(report, null, 2), { mode: 0o600 });
+console.log(`Meta catalogue check: ${report.status}. Studio configured: ${report.studioConfigured ? "yes" : "no"}. Profile: ${report.requestProfile}.`);
+for (const model of report.models) console.log(`${model.id}: ${model.listed === null ? "not verified" : model.listed ? "listed" : "not listed"}`);
+console.log(`Inference calls: 0. Credentials and provider response bodies are not printed. Report: ${path}`);
+if (report.status !== "catalogue-confirmed" || !report.studioConfigured) process.exitCode = 1;

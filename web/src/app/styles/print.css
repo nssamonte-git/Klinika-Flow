@@ -1,0 +1,57 @@
+/* Printable patient sheet: screen preview and print media. */
+.print-shell {
+  max-width: 760px; margin: var(--space-8) auto; padding: var(--space-8);
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow-xs);
+}
+.print-tools { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); flex-wrap: wrap; margin-bottom: var(--space-6); }
+.print-header { display: flex; align-items: center; gap: 10px; margin-bottom: var(--space-2); color: var(--teal-500); }
+.print-header h1 { font-size: var(--text-3xl); color: var(--ink-900); }
+.print-metadata { color: var(--ink-500); font-size: var(--text-sm); margin-bottom: var(--space-4); overflow-wrap: anywhere; }
+.print-warning {
+  padding: 12px 16px; margin: var(--space-5) 0;
+  background: var(--warning-50); border: 1px solid var(--warning-200); border-radius: var(--radius-sm);
+  font-size: var(--text-sm); font-weight: var(--weight-semibold); color: var(--warning-700);
+}
+section.print-warning h2 { font-size: var(--text-lg); color: var(--warning-700); margin-bottom: var(--space-2); }
+section.print-warning p { font-size: var(--text-md); font-weight: var(--weight-regular); color: var(--ink-800); margin: 6px 0; }
+.print-section { padding: var(--space-5) 0; border-top: 1px solid var(--line); }
+.print-section h2 {
+  font-size: var(--text-xs); font-weight: var(--weight-semibold); letter-spacing: var(--tracking-caps); text-transform: uppercase;
+  color: var(--teal-700); margin-bottom: var(--space-2);
+}
+.print-section p { font-size: var(--text-sheet); line-height: var(--leading-relaxed); color: var(--ink-900); margin: 10px 0; }
+.illustrated-line { display: flex; gap: var(--space-3); align-items: center; break-inside: avoid; }
+.print-review { font-size: var(--text-sm); color: var(--ink-500); border-top: 1px solid var(--line); padding-top: var(--space-4); margin-top: var(--space-5); }
+.print-note h2 { font-size: var(--text-xl); margin: var(--space-7) 0 var(--space-3); }
+.print-note p { font-size: var(--text-md); color: var(--ink-800); }
+.print-note li { font-size: var(--text-md); margin: var(--space-3) 0; }
+.print-note small { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-500); }
+.print-blocked {
+  text-align: center; max-width: 480px; margin: 80px auto; padding: var(--space-7);
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-lg); box-shadow: var(--shadow-xs);
+}
+.print-blocked > svg { color: var(--warning-500); margin-bottom: var(--space-3); }
+.print-blocked h1 { font-size: 24px; margin-bottom: var(--space-3); }
+.print-blocked p { color: var(--ink-600); }
+.print-blocked ul { text-align: left; color: var(--ink-600); margin: var(--space-5) 0 var(--space-6); font-size: var(--text-md); }
+.print-blocked ul li { margin: 6px 0; }
+
+@media (max-width: 700px) {
+  .print-shell { margin: 0; border: 0; border-radius: 0; box-shadow: none; padding: var(--space-5) var(--page-x); }
+  .print-blocked { margin: var(--space-6) var(--page-x); }
+}
+
+@media print {
+  body { background: #fff; color: #000; font-size: 12pt; }
+  .print-shell { max-width: none; margin: 0; padding: 0; border: 0; border-radius: 0; box-shadow: none; }
+  .print-tools { display: none; }
+  .print-header { color: #000; }
+  .print-header h1, .print-section h2, .print-note h2, .print-section p { color: #000; }
+  .print-warning { background: none; border: 1px solid #000; color: #000; }
+  .print-section p { font-size: 13pt; }
+  .print-section, .print-note li, .illustrated-line { break-inside: avoid; }
+  .print-note { break-before: page; }
+  .instruction-illustration { color: #000; background: #fff; border-color: #777; }
+  a[href]::after { content: none; }
+  @page { size: A4; margin: 18mm; }
+}

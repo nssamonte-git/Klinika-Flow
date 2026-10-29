@@ -1,0 +1,95 @@
+/* Design tokens. Unlayered on purpose so they win over Tailwind's @layer theme variables. */
+:root {
+  /* Brand: teal is the only accent; it also carries success and info. */
+  --teal-50: #eef7f4;
+  --teal-100: #d5ebe4;
+  --teal-200: #a8d5c9;
+  --teal-300: #6cbcac;
+  --teal-500: #157d70;
+  --teal-600: #0f6258;
+  --teal-700: #0b4d46;
+
+  /* Ink: text ramp. 500 is the muted floor for body text (5.3:1 on white). */
+  --ink-900: #16302e;
+  --ink-800: #203b3a;
+  --ink-600: #4a615e;
+  --ink-500: #5b706d;
+  --ink-400: #7f918e; /* placeholders, disabled text, decorative icons only */
+  --ink-300: #b9c6c2; /* chevrons, hairline icons */
+
+  /* Surfaces and lines */
+  --surface: #ffffff;
+  --surface-sunken: #f4f7f5;
+  --surface-tint: #f8faf8;
+  --line: #e3e9e6;
+  --line-strong: #cdd8d3;
+
+  /* Warning (amber) and danger (red) */
+  --warning-50: #fff8e8;
+  --warning-200: #efdcae;
+  --warning-500: #b07a1f;
+  --warning-700: #805a20;
+  --danger-50: #fdf1ed;
+  --danger-200: #f0cfc3;
+  --danger-600: #a23b2e;
+  --danger-700: #86301f;
+
+  /* Legacy aliases kept for any inline reference; prefer the ramps above. */
+  --ink: var(--ink-800);
+  --muted: var(--ink-500);
+  --teal: var(--teal-500);
+  --teal-dark: var(--teal-600);
+  --mint: var(--teal-50);
+  --paper: var(--surface);
+  --bg: var(--surface-sunken);
+  --amber: var(--warning-500);
+
+  /* Typography */
+  --font-sans: var(--font-inter, ui-sans-serif), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 18px;
+  --text-2xl: 22px;
+  --text-3xl: 28px;
+  --text-sheet: 17px;
+  --leading-tight: 1.25;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.65;
+  --tracking-tight: -0.015em;
+  --tracking-caps: 0.08em;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+
+  /* Spacing (4px base) and layout gutters */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 40px;
+  --space-9: 48px;
+  --panel-x: 28px;
+  --page-x: 24px;
+  --content-max: 1040px;
+
+  /* Radius, elevation, focus, motion */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+  --shadow-xs: 0 1px 2px rgb(22 48 46 / 0.06);
+  --shadow-md: 0 4px 14px rgb(22 48 46 / 0.08);
+  --shadow-lg: 0 12px 32px rgb(22 48 46 / 0.14);
+  --focus: var(--teal-500);
+  --ring: 3px solid var(--focus);
+  --transition: 150ms cubic-bezier(0.2, 0, 0, 1);
+}
+@media (max-width: 700px) {
+  :root { --panel-x: 16px; --page-x: 16px; }
+}

@@ -1,0 +1,27 @@
+# Dependencies and generated outputs
+node_modules/
+.next/
+coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo
+
+# Private settings and runtime history
+.env*
+!.env.example
+/data/
+/backend/eval/audio/*.wav
+/backend/eval/runs/
+/runs/
+*.sqlite
+*.sqlite-*
+*.sqlite.*
+*.db
+*.db-*
+
+# Local tooling and temporary files
+.DS_Store
+*.log
+*.tmp
+/.codex/
+/.claude/

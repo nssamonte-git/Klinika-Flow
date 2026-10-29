@@ -1,0 +1,44 @@
+{
+  "name": "klinikaflow-mvp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "acceptance:evidence": "node --env-file-if-exists=.env --import tsx backend/scripts/acceptance-evidence.ts",
+    "dev": "node --env-file-if-exists=.env backend/scripts/run-web.mjs dev",
+    "build": "node --env-file-if-exists=.env backend/scripts/run-web.mjs build",
+    "start": "node --env-file-if-exists=.env backend/scripts/run-web.mjs start",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --config backend/vitest.config.ts",
+    "test:watch": "vitest --config backend/vitest.config.ts",
+    "eval": "node --env-file-if-exists=.env --conditions=react-server --import tsx backend/scripts/evaluate.ts",
+    "eval:live": "node --env-file-if-exists=.env --conditions=react-server --import tsx backend/scripts/evaluate.ts --live",
+    "check": "npm run typecheck && npm test && npm run build",
+    "eval:cache": "node --env-file-if-exists=.env --conditions=react-server --import tsx backend/scripts/compare-meta-cache.ts",
+    "verify:meta": "node --env-file-if-exists=.env --conditions=react-server --import tsx backend/scripts/verify-meta-access.ts",
+    "admin:create": "node --env-file-if-exists=.env --conditions=react-server --import tsx backend/scripts/create-admin.ts"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "dependencies": {
+    "lucide-react": "^1.63.0",
+    "next": "^16.4.3",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "server-only": "^0.0.1",
+    "tsx": "^4.23.15",
+    "ws": "^8.22.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/ws": "^8.18.2",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.12"
+  }
+}

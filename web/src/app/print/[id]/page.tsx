@@ -1,0 +1,27 @@
+import { cookies } from "next/headers";
+import { HeartPulse, ShieldCheck } from "lucide-react";
+import { getSession, loadEncounter } from "@backend/server/db";
+import { sessionFromCookie } from "@backend/server/auth-core";
+import { currentPrintException, exportReasons } from "@backend/domain/workflow";
+import { renderEnglish, sectionLabel } from "@backend/domain/render";
+import type { AiReview, Encounter, Fact } from "@backend/domain/schema";
+import InstructionIllustration from "../../../components/instruction-illustration";
+import PrintButton from "../../../components/print-button";
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+function reviewLabel(review: AiReview | null | undefined) {
+  if (!review) return "No current review";
+  if (review.status === "saved") return "Saved human-authored synthetic review; no model call.";
+  if (review.status === "manual") return `Manual fallback by ${review.reviewer}: ${review.reason}`;
+  return `Meta ${review.model} · ${review.promptVersion}. ${review.findings.length} findings; all dispositions recorded.`;
+}
+export default async function PrintPage({ params }: { params: Promise<{ id: string }> }) {
+  let session;
+  try { session = sessionFromCookie((await cookies()).toString()); } catch { /* Missing or revoked access. */ }
+  let e: Encounter | undefined;
+  try { if (session) e = loadEncounter(session.id, (await params).id); } catch { /* Deliberately do not disclose other sessions. */ }
+  if (!e) return <main className="print-blocked"><h1>Encounter unavailable</h1><p>Sign in with the account that owns this encounter, or return to its Saved Demo.</p><a href="/" className="button secondary">Return to workspace</a></main>;
+  const reasons = exportReasons(e);
+  if (reasons.length) return <main className="print-blocked"><ShieldCheck size={30} /><h1>Export is locked</h1><ul>{reasons.map(r => <li key={r}>{r}</li>)}</ul><a href="/" className="button secondary">Return to review</a></main>;
+  return <main className="print-shell"><div className="print-tools"><a href="/" className="button secondary">Back to workspace</a><PrintButton /></div><header className="print-header"><HeartPulse size={30} /><h1>Mga Bilin ng Doktor</h1></header><p className="print-metadata">KlinikaFlow · {e.caseId} · version {e.version} · Filipino / English</p><p className="print-warning">SYNTHETIC DEMONSTRATION ONLY. Not for patient care. Template wording awaits independent clinician and native-speaker validation.</p><div lang="fil">{["medication", "advice", "negation", "warning", "followup"].map(kind => { const lines = e.lines.filter(l => l.fact.kind === kind); return lines.length ? <section className="print-section" key={kind}><h2>{sectionLabel[kind as Fact["kind"]]}</h2>{lines.map(l => <div className="illustrated-line" key={l.id}>{e.illustrations?.find(image => image.lineId === l.id) && <InstructionIllustration illustrationId={e.illustrations.find(image => image.lineId === l.id)!.illustrationId} />}<p>{l.text}</p></div>)}</section> : null; })}</div><p className="print-review">Demonstration approval: {e.sheetApproval!.reviewer} · {e.sheetApproval!.at}<br />Every instruction cites an approved claim. Source record: {e.id}</p><section className="print-note"><h2>Reviewed English instruction note</h2><p className="print-metadata">Synthetic encounter · note reviewer: {e.noteApproval!.reviewer}</p>{e.claims.map(c => <p key={c.id}>{renderEnglish(c.fact)}<br /><small>Claim {c.id} · source turns {c.sourceTurnIds.join(", ")}</small></p>)}<h2>Teach-back record</h2>{e.teachBackSkip ? <p>Skipped: {e.teachBackSkip}</p> : <ul>{e.teachBack.map(t => <li key={t.id}><strong>{t.question}</strong><br />Expected: {t.expected}<br />Outcome: {t.outcome} · reviewer: {t.attempts?.find(a => a.id === t.activeAttemptId)?.reviewer ?? "not recorded"}<br />Analysis: {t.analysis?.status === "saved" ? "Saved synthetic comparison; no model call" : t.analysis?.status === "manual" ? `Manual fallback by ${t.analysis.reviewer}: ${t.analysis.reason}` : `Meta ${t.analysis?.model} · ${t.analysis?.promptVersion}`}<br />{t.analysis?.transcript && <>Answer: {t.analysis.transcript}<br /></>}{t.analysis?.findings.map((f, i) => <span key={i}>{f.category} · sheet {f.sourceLineIds.join(", ")}: {f.explanation}<br /></span>)}</li>)}</ul>}{currentPrintException(e) && e.printException && <section className="print-warning"><h2>Reviewer print exception · understanding not confirmed</h2><p>Unresolved questions: {e.printException.unresolvedQuestionIds.join(", ")}. Reviewer: {e.printException.reviewer}. Recorded: {e.printException.at}. Reason: {e.printException.reason}</p></section>}<h2>Discrepancy review record</h2>{(["note", "sheet"] as const).map(stage => { const review = stage === "note" ? e.noteReview : e.sheetReview; return <div key={stage}><p>{stage}: {reviewLabel(review)}</p>{review?.findings.map(f => <p key={f.id}>{f.category} · source {f.sourceIds.join(", ")} → target {f.targetId || "omission"}: {f.explanation}<br />Disposition by {f.dismissal?.reviewer}: {f.dismissal?.reason}</p>)}</div>; })}<h2>Illustration review record</h2>{e.illustrations?.map(image => <p key={image.lineId}>Line {image.lineId} · artwork {image.illustrationId} · {image.libraryVersion} · reviewed by {image.reviewer} at {image.at}</p>)}<h2>Provenance and review limits</h2><p>{e.provenance.transcript}</p><p>{e.provenance.note}</p><p>{e.provenance.sheet}</p><p>Approval records indicate review of this demonstration version. They are not evidence of clinical or language validation.</p></section></main>;
+}

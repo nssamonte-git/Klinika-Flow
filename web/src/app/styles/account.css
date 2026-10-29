@@ -1,0 +1,32 @@
+/* Account, sign-in, sign-up, reset and admin screens keep their own centred layout without the workspace topbar. */
+.account-shell { max-width: 480px; margin: 0 auto; padding: var(--space-9) var(--page-x) 72px; }
+.account-shell.account-wide { max-width: 1100px; }
+.account-brand { display: inline-block; font-size: var(--text-2xl); font-weight: var(--weight-semibold); letter-spacing: var(--tracking-tight); color: var(--ink-900); margin-bottom: var(--space-6); }
+.account-navigation { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-4); margin-bottom: var(--space-6); font-size: var(--text-md); font-weight: var(--weight-medium); }
+.account-navigation a, .account-navigation .text-link { color: var(--teal-600); min-height: 0; padding: 0; }
+.account-navigation a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.account-panel { padding: var(--space-7); overflow-wrap: anywhere; }
+.account-panel h1 { font-size: 24px; margin-bottom: var(--space-2); }
+.account-panel h2 { font-size: var(--text-xl); margin: var(--space-6) 0 var(--space-2); }
+.account-panel p { margin: var(--space-3) 0; color: var(--ink-600); }
+.account-panel p a { color: var(--teal-600); font-weight: var(--weight-medium); text-decoration: underline; text-underline-offset: 3px; }
+.account-panel p.alert { margin-bottom: var(--space-4); }
+.account-form { display: grid; gap: var(--space-4); margin: var(--space-5) 0; }
+.account-form .field { font-size: var(--text-sm); color: var(--ink-800); }
+.account-form input, .account-panel input { width: 100%; min-width: 0; min-height: 44px; font-size: 15px; }
+.account-form .button, .account-panel .button-row .button { justify-self: start; }
+.account-panel .source-note { display: block; margin: var(--space-5) 0; }
+.account-panel .source-note h2 { margin-top: 0; font-size: var(--text-lg); }
+.account-panel .source-note p { color: var(--ink-600); }
+.account-users { display: grid; gap: var(--space-4); margin-top: var(--space-6); }
+.account-user { border: 1px solid var(--line); border-radius: var(--radius-md); padding: var(--space-5); }
+.account-user h2 { margin: 0 0 var(--space-1); font-size: var(--text-lg); }
+.account-user p { margin: 4px 0; }
+.account-user .button-row { margin-top: var(--space-3); }
+
+@media (max-width: 700px) {
+  .account-shell { padding: var(--space-5) var(--page-x) var(--space-9); }
+  .account-panel { padding: var(--space-5) var(--space-4); }
+  .account-panel h1 { font-size: var(--text-2xl); }
+  .account-navigation { gap: var(--space-3); }
+}
