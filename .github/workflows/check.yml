@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       # Throwaway database; no model key, live mode off. CI never makes paid calls.
-      DATABASE_PATH: ${{ runner.temp }}/klinikaflow-ci.sqlite
+      DATABASE_PATH: /tmp/klinikaflow-ci.sqlite
       ALLOW_LIVE_MODE: "false"
       MODEL_API_KEY: ""
     steps:
