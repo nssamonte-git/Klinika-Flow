@@ -10,7 +10,7 @@ const id = z.string().regex(/^[a-zA-Z0-9-]{1,100}$/);
 const amount = z.number().finite().nonnegative();
 const count = z.number().int().nonnegative();
 const nullableCount = count.nullable();
-const operation = z.enum(["note", "filipino_sheet", "note_review", "sheet_review", "teach_back_analysis", "note_correction", "plan_question", "document_extraction", "transcription", "other"]);
+const operation = z.enum(["note", "filipino_sheet", "note_review", "sheet_review", "teach_back_analysis", "note_correction", "plan_question", "document_extraction", "transcription", "agent_teach_back_plan", "agent_source_review_plan", "other"]);
 const basis = z.enum(["measured-tokens", "cache-unknown-estimate", "unknown"]);
 const textSchema = z.object({
   model: z.enum([MODEL.text, "unknown"]), operation,
@@ -24,7 +24,7 @@ const textSchema = z.object({
 const reservationSchema = z.object({ id, operation, created: count, estimatedUsd: amount, calculatedUsd: amount.nullable(), text: textSchema.nullable() }).strict();
 export const EvidenceSnapshotSchema = z.object({
   format: z.literal("klinikaflow-acceptance-snapshot@1"), at: z.iso.datetime(),
-  databaseIdentity: z.string().regex(/^[a-f0-9]{64}$/), schemaVersion: z.literal(5),
+  databaseIdentity: z.string().regex(/^[a-f0-9]{64}$/), schemaVersion: z.union([z.literal(5), z.literal(6)]),
   encounterId: id, encounterVersion: count, accountId: id,
   configuration: z.object({
     source: z.literal("CLI environment; server configuration must be confirmed separately"),
@@ -63,14 +63,15 @@ export function snapshotEvidence(databasePath: string, encounterId: string): Evi
   const db = new DatabaseSync(path, { readOnly: true });
   try {
     db.exec("PRAGMA query_only=ON; BEGIN");
-    if (Number(db.prepare("PRAGMA user_version").get()?.user_version) !== 5) throw new Error("Evidence requires an existing schema-v5 database; run the application migration separately.");
+    const schemaVersion = Number(db.prepare("PRAGMA user_version").get()?.user_version);
+    if (schemaVersion !== 5 && schemaVersion !== 6) throw new Error("Evidence requires an existing schema-v5/v6 database; run the application migration separately.");
     const row = db.prepare("SELECT e.version,w.user_id FROM encounters e JOIN workspaces w ON w.id=e.owner WHERE e.id=?").get(encounterId);
     if (!row?.user_id) throw new Error("Select an existing account-owned encounter; Saved Demo and unclaimed legacy encounters are excluded.");
     const profile = process.env.META_REQUEST_PROFILE ?? "legacy";
     if (profile !== "legacy" && profile !== "efficient") throw new Error("Invalid request profile.");
     const rows = db.prepare("SELECT r.id,r.purpose,r.created,r.reserved,r.actual,t.metadata FROM reservations r LEFT JOIN text_calls t ON t.reservation=r.id WHERE r.user_id=? ORDER BY r.created,r.id").all(row.user_id);
     const snapshot = EvidenceSnapshotSchema.parse({
-      format: "klinikaflow-acceptance-snapshot@1", at: new Date().toISOString(), databaseIdentity, schemaVersion: 5,
+      format: "klinikaflow-acceptance-snapshot@1", at: new Date().toISOString(), databaseIdentity, schemaVersion,
       encounterId, encounterVersion: Number(row.version), accountId: row.user_id,
       configuration: { source: "CLI environment; server configuration must be confirmed separately", profile, models: MODEL, pricingVersion: PRICING.checked,
         promptVersions: Object.fromEntries(Object.entries(OPERATION_VERSIONS).map(([op, version]) => [op, version.replace(/@1$/, profile === "efficient" ? "@2" : "@1")])) },
@@ -83,6 +84,7 @@ export function snapshotEvidence(databasePath: string, encounterId: string): Evi
 
 export function compareEvidence(beforeInput: unknown, afterInput: unknown, activity: "exclusive" | "concurrent" | "unknown" = "unknown") {
   const before = EvidenceSnapshotSchema.parse(beforeInput), after = EvidenceSnapshotSchema.parse(afterInput);
+  if (before.schemaVersion !== after.schemaVersion) throw new Error("Start a new snapshot pair after a schema migration.");
   for (const key of ["databaseIdentity", "accountId", "encounterId"] as const) if (before[key] !== after[key]) throw new Error("Snapshots must describe the same database, account and encounter.");
   if (Date.parse(after.at) < Date.parse(before.at) || after.encounterVersion < before.encounterVersion) throw new Error("Snapshots are out of order.");
   const old = new Map(before.reservations.map(r => [r.id, r]));

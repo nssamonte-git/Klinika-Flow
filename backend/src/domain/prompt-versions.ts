@@ -1,5 +1,6 @@
 // Shared identifiers only; importing these must not initialize storage or provider clients.
 export const OPERATION_VERSIONS = {
+  agent_teach_back_plan: "klinikaflow-agent-teach-back@1", agent_source_review_plan: "klinikaflow-agent-source-review@1",
   note: "klinikaflow-core@1", filipino_sheet: "klinikaflow-core@1",
   note_review: "klinikaflow-discrepancy@1", sheet_review: "klinikaflow-discrepancy@1",
   teach_back_analysis: "klinikaflow-teach-back@1", note_correction: "klinikaflow-note-correction@1",

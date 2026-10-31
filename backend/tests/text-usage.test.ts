@@ -18,7 +18,7 @@ it("backs up v3 databases and preserves old usage without fabricating token coun
     const { DatabaseSync } = await import("node:sqlite");
     const old = new DatabaseSync(join(directory, "history.sqlite"));
     old.exec("CREATE TABLE reservations (id TEXT PRIMARY KEY,purpose TEXT NOT NULL,reserved REAL NOT NULL,actual REAL,created INTEGER NOT NULL); INSERT INTO reservations VALUES('old-usage','note',0.5,0.1,1234); PRAGMA user_version=3"); old.close();
-    expect(db().prepare("PRAGMA user_version").get()?.user_version).toBe(5); expect(db().prepare("SELECT * FROM reservations WHERE id='old-usage'").get()).toMatchObject({ reserved: 0.5, actual: 0.1, created: 1234 });
+    expect(db().prepare("PRAGMA user_version").get()?.user_version).toBe(6); expect(db().prepare("SELECT * FROM reservations WHERE id='old-usage'").get()).toMatchObject({ reserved: 0.5, actual: 0.1, created: 1234 });
     expect(modelUsageSummary().text).toMatchObject({ calls: 0, coverage: null, historicalOrNonTextRecords: 1 }); expect(readdirSync(directory).filter(name => name.includes(".backup-"))).toHaveLength(1);
   } finally { closeDb(); rmSync(directory, { recursive: true, force: true }); }
 });

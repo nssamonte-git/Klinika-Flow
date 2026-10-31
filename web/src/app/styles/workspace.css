@@ -408,3 +408,14 @@ iframe.document-preview { height: 550px; }
   .brand { gap: 6px; }
   .step strong { font-size: 11px; hyphens: auto; overflow-wrap: anywhere; }
 }
+
+/* Optional agent evidence stays inside the guided workspace. */
+.agent-panel, .agent-panel section, .agent-panel article, .agent-panel fieldset{min-width:0;max-width:100%;}
+.agent-panel p, .agent-panel li, .agent-panel blockquote, .agent-panel small{overflow-wrap:anywhere;}
+.agent-panel section, .agent-panel article, .agent-handoff{margin-top:16px;}
+.agent-panel fieldset{border:1px solid var(--line);border-radius:8px;padding:12px;margin:12px 0;}
+.agent-panel button{margin:4px 8px 4px 0;white-space:normal;}
+.agent-panel blockquote{margin:8px 0;padding:8px 12px;border-left:3px solid var(--line);}
+.agent-panel ol, .agent-panel ul{padding-left:20px;}
+.agent-panel li{margin:8px 0;}
+.agent-panel select{max-width:100%;}

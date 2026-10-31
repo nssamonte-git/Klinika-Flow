@@ -1,4 +1,4 @@
-import { assertRequestAccess, usageActor } from "./request-context";
+import { assertRequestAccess, usageActor, observeReservation } from "./request-context";
 import { DatabaseSync } from "node:sqlite";
 import { chmodSync, existsSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -24,7 +24,7 @@ export function db(): DatabaseSync {
     CREATE TABLE IF NOT EXISTS limits (key TEXT PRIMARY KEY, count INTEGER NOT NULL, reset INTEGER NOT NULL);
   `);
   const version = Number(singleton.prepare("PRAGMA user_version").get()?.user_version ?? 0);
-  if (version < 5 && existingFile) {
+  if (version < 6 && existingFile) {
     const backupPath = `${resolve(path)}.backup-${new Date().toISOString().replace(/[:.]/g, "-")}`;
     singleton.exec(`VACUUM INTO '${backupPath.replace(/'/g, "''")}'`);
     chmodSync(backupPath, 0o600);
@@ -63,6 +63,11 @@ export function db(): DatabaseSync {
       PRAGMA user_version=5; COMMIT; PRAGMA foreign_keys=ON;`);
     if (singleton.prepare("PRAGMA foreign_key_check").all().length) throw new Error("Ownership migration integrity check failed.");
   }
+  if (version < 6) singleton.exec(`BEGIN IMMEDIATE;
+    CREATE TABLE agent_runs (id TEXT PRIMARY KEY, encounter TEXT NOT NULL REFERENCES encounters(id) ON DELETE CASCADE, owner TEXT NOT NULL REFERENCES workspaces(id), status TEXT NOT NULL, body TEXT NOT NULL, created INTEGER NOT NULL);
+    CREATE UNIQUE INDEX agent_one_active ON agent_runs(encounter) WHERE status IN ('ready','awaiting_tool','executing','paused');
+    CREATE TABLE agent_events (id TEXT PRIMARY KEY, run TEXT NOT NULL REFERENCES agent_runs(id) ON DELETE CASCADE, encounter TEXT NOT NULL REFERENCES encounters(id) ON DELETE CASCADE, owner TEXT NOT NULL REFERENCES workspaces(id), request_key TEXT NOT NULL, signature TEXT NOT NULL, body TEXT NOT NULL, created INTEGER NOT NULL, UNIQUE(owner,encounter,request_key));
+    PRAGMA user_version=6; COMMIT;`);
   return singleton;
 }
 export function closeDb() { singleton?.close(); singleton = undefined; }
@@ -196,6 +201,7 @@ export function recordEstimatedCost(purpose: string, amount: number, userId = us
   if (!Number.isFinite(amount) || amount <= 0) throw new WorkflowError("Invalid cost estimate.", 500);
   const id = randomBytes(16).toString("hex");
   db().prepare("INSERT INTO reservations(id,purpose,reserved,created,user_id) VALUES(?,?,?,?,?)").run(id, purpose, amount, Date.now(), userId);
+  observeReservation(id);
   return id;
 }
 export function recordCost(id: string, actual: number) {

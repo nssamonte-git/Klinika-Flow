@@ -30,7 +30,7 @@ it("backs up and migrates a populated v4 file without changing content, children
     old.prepare("INSERT INTO reservations VALUES('historical','note',0.5,0.01,123)").run();
     old.prepare("INSERT INTO text_calls VALUES('historical',?)").run('{"original":"metadata"}');
     old.prepare("INSERT INTO jobs VALUES('old-job',?,'sig','done',?,123)").run(owner, body); old.close();
-    expect(db().prepare("PRAGMA user_version").get()?.user_version).toBe(5);
+    expect(db().prepare("PRAGMA user_version").get()?.user_version).toBe(6);
     expect(db().prepare("PRAGMA foreign_key_check").all()).toEqual([]);
     expect(db().prepare("SELECT body,audio FROM encounters").get()).toMatchObject({ body, audio: new Uint8Array(Buffer.from("consultation")) });
     expect(Buffer.from(db().prepare("SELECT audio FROM teach_back_attempt_audio").get()!.audio as Uint8Array).toString()).toBe("attempt audio");
