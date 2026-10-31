@@ -52,5 +52,29 @@ export const cases: Case[] = [
       claim("c4", "t4", { kind: "followup", date: "2026-11-14", urgency: "scheduled" }),
     ],
   },
+  {
+    id: "case-04", title: "Dengue warning signs, with a bantay", subtitle: "Taglish · companion gives the medicine · huwag + immediate return", patient: "Patient D · synthetic adult with companion",
+    // The companion (anak) will give the medicine, so the medicine teach-back must come from them.
+    companion: { relation: "anak", answers: ["medicine"] },
+    plantedAnswers: { medicine: { respondent: "companion", transcript: "Bibigyan ko si Nanay ng Paracetamol 500 mg, isang tableta, kada anim na oras kung may lagnat. Kung sumakit ang tiyan niya, ibuprofen ang ibibigay ko." } },
+    turns: [
+      turn("t1", "patient", "Dok, tatlong araw na po akong nilalagnat. Synthetic test lang po ito.", 0),
+      turn("t2", "patient", "Anak po ako ng pasyente. Ako po ang magbibigay ng gamot kay Nanay sa bahay.", 8),
+      turn("t3", "clinician", "For this synthetic plan: Paracetamol limang daan mg, 1 tablet, kada anim na oras, kung may lagnat, sa loob ng tatlong araw.", 16),
+      turn("t4", "clinician", "Huwag uminom ng ibuprofen o aspirin.", 24),
+      turn("t5", "clinician", "Bumalik agad kung may matinding pananakit ng tiyan. Bumalik agad kung tuloy-tuloy ang pagsusuka. Bumalik agad kung may pagdurugo ng gilagid o ilong.", 32),
+      turn("t6", "clinician", "Uminom ng maraming tubig o likido.", 40),
+      turn("t7", "clinician", "For this fictional visit on 2026-11-03, return for follow-up on 2026-11-04.", 48),
+    ],
+    claims: [
+      claim("c1", "t3", { kind: "medication", medicine: "Paracetamol", dose: "500 mg", quantity: "1 tablet", frequency: "every 6 hours", duration: "3 days", timing: "if fever" }),
+      claim("c2", "t4", { kind: "negation", action: "take ibuprofen or aspirin", negated: true }),
+      claim("c3", "t5", { kind: "warning", condition: "severe abdominal pain", urgency: "immediate", delayDays: 0 }),
+      claim("c4", "t5", { kind: "warning", condition: "persistent vomiting", urgency: "immediate", delayDays: 0 }),
+      claim("c5", "t5", { kind: "warning", condition: "bleeding gums or nose", urgency: "immediate", delayDays: 0 }),
+      claim("c6", "t6", { kind: "advice", action: "drink plenty of fluids" }),
+      claim("c7", "t7", { kind: "followup", date: "2026-11-04", urgency: "scheduled" }),
+    ],
+  },
 ];
 export const getCase = (id: string) => cases.find(c => c.id === id);

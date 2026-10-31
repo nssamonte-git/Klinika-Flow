@@ -3,7 +3,7 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createEncounter, makeTeachBack, normalizeAttempts, runChecks, savedNote, savedReview, approveNote, approveSheet, invalidate, sheetFingerprint } from "../src/domain/workflow";
+import { applyRuleCheck, createEncounter, exportReasons, makeTeachBack, normalizeAttempts, runChecks, savedNote, savedReview, approveNote, approveSheet, invalidate, sheetFingerprint, unresolvedTeachBack } from "../src/domain/workflow";
 import { templateSheet } from "../src/domain/render";
 import { act } from "../src/server/actions";
 import { closeDb, createSession, db, insertEncounter, loadEncounter, loadTeachBackAttemptAudio, saveTeachBackAudio } from "../src/server/db";
@@ -11,8 +11,8 @@ import { closeDb, createSession, db, insertEncounter, loadEncounter, loadTeachBa
 let directory: string | null = null;
 beforeEach(() => { closeDb(); process.env.DATABASE_PATH = ":memory:"; });
 afterEach(() => { closeDb(); if (directory) { rmSync(directory, { recursive: true, force: true }); directory = null; } });
-function approved() {
-  let e = createEncounter("attempt-encounter", "case-01"); e.consent = true; e.claims = savedNote(e); e.noteReview = savedReview(e, "note"); e = approveNote(runChecks(e), "DR", true);
+function approved(caseId = "case-01") {
+  let e = createEncounter("attempt-encounter", caseId); e.consent = true; e.claims = savedNote(e); e.noteReview = savedReview(e, "note"); e = approveNote(runChecks(e), "DR", true);
   e.lines = templateSheet(e.claims); e.sheetReview = savedReview(e, "sheet"); e = approveSheet(runChecks(e), "DR", true); e.teachBack = makeTeachBack(e);
   return e;
 }
@@ -50,5 +50,59 @@ describe("teach-back attempt history", () => {
     expect(db().prepare("SELECT COUNT(*) AS n FROM reservations").get()?.n).toBe(1);
     expect(readdirSync(directory).filter(name => name.includes(".backup-"))).toHaveLength(1);
     expect(normalizeAttempts(imported)).toEqual(imported);
+  });
+});
+
+describe("rule check and companion answers", () => {
+  const understood = (q: string) => ({ action: "record-teach-back" as const, outcomes: { [q]: "understood" as const }, reviewer: "DR" });
+  it("requires a reason to mark a flagged answer understood and keeps it on the attempt", async () => {
+    const owner = createSession(), e = approved(); insertEncounter(owner.id, e);
+    expect(e.teachBack.find(q => q.id === "warning")!.attempts![0].ruleCheck?.findings[0].responseQuote).toBe("pagkatapos ng tatlong araw");
+    await expect(act(owner, e.id, "rule-no-reason-key", { ...understood("warning"), expectedVersion: e.version })).rejects.toThrow(/rule check flagged/);
+    await expect(act(owner, e.id, "rule-short-reason-key", { ...understood("warning"), expectedVersion: e.version, overrideReasons: { warning: "ok" } })).rejects.toThrow(/rule check flagged/);
+    const overridden = await act(owner, e.id, "rule-reason-key", { ...understood("warning"), expectedVersion: e.version, overrideReasons: { warning: "Actor misspoke; repeated correctly aloud" } });
+    expect(overridden.teachBack.find(q => q.id === "warning")!.attempts![0].overrideReason).toBe("Actor misspoke; repeated correctly aloud");
+    expect(unresolvedTeachBack(overridden)).not.toContain("warning");
+  });
+  it("reruns the rule check when a reviewer corrects the transcript", () => {
+    const e = approved(), q = e.teachBack.find(t => t.id === "warning")!, attempt = q.attempts![0];
+    attempt.overrideReason = "Earlier override reason"; attempt.correctedTranscript = "Babalik agad kung hindi bumaba ang lagnat o kung hirap huminga.";
+    applyRuleCheck(e, q, attempt);
+    expect(attempt.ruleCheck?.findings).toEqual([]); expect(attempt.overrideReason).toBeNull();
+  });
+  it("requires the bantay to say back the medicine in the dengue case", async () => {
+    const owner = createSession(), e = approved("case-04"); insertEncounter(owner.id, e);
+    const medicine = e.teachBack.find(q => q.id === "medicine")!;
+    expect(e.companion).toEqual({ present: true, relation: "anak" });
+    expect(medicine.requiredRespondent).toBe("companion");
+    expect(medicine.attempts![0]).toMatchObject({ respondent: "companion", ruleCheck: { findings: [expect.objectContaining({ responseQuote: "ibuprofen ang ibibigay ko" })] } });
+    const reexplained = await act(owner, e.id, "rule-reexplain-key", { action: "record-teach-back", expectedVersion: e.version, outcomes: { medicine: "reexplained" }, reviewer: "DR" });
+    const byPatient = await act(owner, e.id, "rule-patient-repeat-key", { action: "start-teach-back-attempt", expectedVersion: reexplained.version, questionId: "medicine", respondent: "patient" });
+    const patientUnderstood = await act(owner, e.id, "rule-patient-ok-key", { ...understood("medicine"), expectedVersion: byPatient.version });
+    expect(unresolvedTeachBack(patientUnderstood)).toContain("medicine");
+    // Correcting who answered relabels the current attempt and clears its outcome; it does not create a new answer.
+    const switched = await act(owner, e.id, "rule-switch-key", { action: "set-respondent", expectedVersion: patientUnderstood.version, questionId: "medicine", respondent: "companion" });
+    expect(switched.teachBack.find(q => q.id === "medicine")!.outcome).toBe("pending");
+    const done = await act(owner, e.id, "rule-companion-ok-key", { ...understood("medicine"), expectedVersion: switched.version });
+    expect(unresolvedTeachBack(done)).not.toContain("medicine");
+    expect(done.teachBack.find(q => q.id === "medicine")!.attempts!.map(a => a.respondent)).toEqual(["companion", "companion"]);
+  });
+  it("returns questions to the patient when the companion is removed and expires exceptions on requirement changes", async () => {
+    const owner = createSession(), e = approved("case-04"); insertEncounter(owner.id, e);
+    const exception = await act(owner, e.id, "rule-exception-key", { action: "record-print-exception", expectedVersion: e.version, confirmed: true, reviewer: "DR", reason: "Synthetic QA exception" });
+    expect(exportReasons(exception).some(r => r.includes("Confirm understanding"))).toBe(false);
+    const changed = await act(owner, e.id, "rule-require-patient-key", { action: "set-required-respondent", expectedVersion: exception.version, questionId: "medicine", respondent: "patient" });
+    expect(changed.printException).toBeNull();
+    const removed = await act(owner, e.id, "rule-no-companion-key", { action: "set-companion", expectedVersion: changed.version, value: false });
+    expect(removed.companion).toBeNull();
+    expect(removed.teachBack.every(q => q.requiredRespondent === "patient")).toBe(true);
+    await expect(act(owner, e.id, "rule-bad-companion-key", { action: "set-respondent", expectedVersion: removed.version, questionId: "medicine", respondent: "companion" })).rejects.toThrow(/companion first/);
+  });
+  it("lets legacy answers without a respondent count only when no companion is recorded", () => {
+    const e = approved();
+    for (const q of e.teachBack) { const a = q.attempts![q.attempts!.length - 1]; delete a.respondent; a.outcome = "understood"; a.reviewer = "DR"; a.overrideReason = a.ruleCheck?.findings.length ? "Synthetic QA override" : null; }
+    expect(unresolvedTeachBack(e)).toEqual([]);
+    e.companion = { present: true, relation: "asawa" };
+    expect(unresolvedTeachBack(e)).toEqual(["followup", "medicine", "warning"]);
   });
 });

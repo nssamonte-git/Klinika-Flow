@@ -107,7 +107,7 @@ describe("teach-back evidence", () => {
     const approvedSheet = await act(owner, e.id, "approve-002", { action: "approve-sheet", expectedVersion: withSheet.version, reviewer: "DR", confirmed: true });
     const withQuestions = await act(owner, e.id, "teach-001", { action: "teach-back", expectedVersion: approvedSheet.version });
     const outcomes = Object.fromEntries(withQuestions.teachBack.map(q => [q.id, "understood"])) as Record<string, "understood">;
-    const final = await act(owner, e.id, "outcome-001", { action: "record-teach-back", expectedVersion: withQuestions.version, outcomes, reviewer: "DR" });
+    const final = await act(owner, e.id, "outcome-001", { action: "record-teach-back", expectedVersion: withQuestions.version, outcomes, reviewer: "DR", overrideReasons: { warning: "Synthetic QA override of planted answer" } });
     expect(exportReasons(final)).toEqual([]);
     expect(final.noteReview?.status).toBe("manual");
     expect(final.teachBack.every(q => q.analysis?.status === "saved")).toBe(true);

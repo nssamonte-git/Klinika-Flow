@@ -8,13 +8,17 @@ import { modelUsageSummary, closeDb } from "../src/server/db";
 import { analyzeTeachBack, generateCandidateSheet, generateNote, MODEL, PRICING, PROMPT_VERSION, REVIEW_PROMPT_VERSION, reviewNote, reviewSheet, TEACH_BACK_PROMPT_VERSION, transcribe } from "../src/server/meta";
 import { promptVersionFor, requestProfile } from "../src/server/text-call";
 import { verifyReviewFindings, verifyTeachBackFindings } from "../src/server/review";
+import { scoreRuleCheck } from "../eval/teach-back-answers";
+import { RULE_CHECK_VERSION } from "../src/domain/taglish";
 
 const live = process.argv.includes("--live");
-const datasetVersion = "synthetic-three-cases@1";
+const datasetVersion = "synthetic-four-cases@1";
+// Live capability runs keep their original three actor-audio cases; case-04 is offline and Saved Demo only.
+const liveAudioCases = cases.filter(c => ["case-01", "case-02", "case-03"].includes(c.id));
 const datasetHash = createHash("sha256").update(JSON.stringify(cases)).digest("hex");
-const implementationHash = createHash("sha256").update(["backend/src/domain/schema.ts", "backend/src/domain/workflow.ts", "backend/src/domain/render.ts", "backend/src/server/meta.ts", "backend/src/server/text-call.ts", "backend/src/domain/text-usage.ts", "backend/src/domain/model-ids.ts"].map(p => readFileSync(p, "utf8")).join("\n")).digest("hex");
+const implementationHash = createHash("sha256").update(["backend/src/domain/schema.ts", "backend/src/domain/workflow.ts", "backend/src/domain/render.ts", "backend/src/domain/taglish.ts", "backend/src/server/meta.ts", "backend/src/server/text-call.ts", "backend/src/domain/text-usage.ts", "backend/src/domain/model-ids.ts"].map(p => readFileSync(p, "utf8")).join("\n")).digest("hex");
 const audioPath = (caseId: string, kind: "consultation" | "teach-back") => resolve("backend/eval/audio", `${caseId}${kind === "teach-back" ? "-teach-back-warning" : ""}.wav`);
-const missingLiveInputs = live ? [!process.env.MODEL_API_KEY ? "MODEL_API_KEY" : "", ...cases.flatMap(c => [audioPath(c.id, "consultation"), audioPath(c.id, "teach-back")].filter(p => !existsSync(p)))].filter(Boolean) : [];
+const missingLiveInputs = live ? [!process.env.MODEL_API_KEY ? "MODEL_API_KEY" : "", ...liveAudioCases.flatMap(c => [audioPath(c.id, "consultation"), audioPath(c.id, "teach-back")].filter(p => !existsSync(p)))].filter(Boolean) : [];
 const liveReady = live && missingLiveInputs.length === 0;
 const report: Record<string, unknown> = { at: new Date().toISOString(), implementationHash, mode: liveReady ? "live" : live ? "live-blocked" : "offline-fixtures", datasetVersion, datasetHash, requestProfile: requestProfile(), promptVersions: { core: promptVersionFor("note"), review: promptVersionFor("note_review"), teachBack: promptVersionFor("teach_back_analysis") }, models: MODEL, pricing: PRICING, humanReview: "pending: clinician and native speaker", selectedSheetMode: "template-draft", missingLiveInputs, cases: [] };
 const results: Record<string, unknown>[] = [];
@@ -27,7 +31,7 @@ for (const c of cases) {
   if (target) { target.fact.urgency = "scheduled"; target.fact.delayDays = 3; target.text = renderFilipino(target.fact); }
   const regressionCaught = checkEncounter(damaged).some(c => c.id.startsWith("meaning"));
   const result: Record<string, unknown> = { caseId: c.id, source: "human-authored synthetic reference", referenceIssues: baseline, timingRegressionCaught: regressionCaught, transcription: { status: "pending", reason: "Requires actor WAVs and a configured server API key." }, note: { status: "pending" }, noteReview: { status: "pending" }, filipinoSheet: { status: "pending" }, sheetReview: { status: "pending" }, teachBack: { status: "pending" } };
-  if (liveReady) {
+  if (liveReady && liveAudioCases.includes(c)) {
     // No retries: each explicit run has its own durable usage record.
     try {
       const note = await generateNote(c.turns);
@@ -56,15 +60,19 @@ for (const c of cases) {
       const analysis = await analyzeTeachBack("Kailan kayo dapat bumalik agad?", warningLines.map(l => ({ id: l.id, text: l.text })), answer.transcript);
       result.teachBack = { status: "completed", voiceModel: MODEL.voice, textModel: MODEL.text, transcriptionLatencyMs: answer.latencyMs, analysisLatencyMs: analysis.latencyMs, transcriptionEstimatedCostUsd: answer.costUsd, analysisCostUsd: analysis.costUsd, analysisCostBasis: analysis.costBasis, usage: analysis.usage, answerTranscript: answer.transcript, findings: verifyTeachBackFindings(analysis.data.findings, warningLines, answer.transcript), outcome: "pending human reviewer" };
     } catch (err) { result.teachBack = { status: "failed", error: err instanceof Error ? err.message : "Request failed" }; }
-  } else if (live) result.liveBlocked = `Missing live inputs: ${missingLiveInputs.join(", ")}. No paid calls made.`;
+  } else if (liveReady) result.liveSkipped = "Offline and Saved Demo case; no actor audio is defined for live runs.";
+  else if (live) result.liveBlocked = `Missing live inputs: ${missingLiveInputs.join(", ")}. No paid calls made.`;
   results.push(result);
 }
 report.cases = results; report.modelUsage = modelUsageSummary();
+const ruleCheck = scoreRuleCheck();
+report.ruleCheck = { parserVersion: RULE_CHECK_VERSION, corpus: "synthetic author-written development set; not held-out or native-speaker evidence", ...ruleCheck };
 const directory = resolve("backend/eval/runs"); mkdirSync(directory, { recursive: true });
 const destination = resolve(directory, `${new Date().toISOString().replace(/[:.]/g, "-")}-${live ? "live" : "offline"}.json`);
 writeFileSync(destination, JSON.stringify(report, null, 2) + "\n");
-const good = results.every(r => (r.referenceIssues as unknown[]).length === 0 && r.timingRegressionCaught);
+const good = results.every(r => (r.referenceIssues as unknown[]).length === 0 && r.timingRegressionCaught) && ruleCheck.incorrect.length === 0;
 console.log(`Reference fixtures: ${good ? "PASS" : "FAIL"} (${cases.length} cases). Immediate-versus-delayed regression: ${results.filter(r => r.timingRegressionCaught).length}/${cases.length} caught.`);
+console.log(`Taglish rule check (${RULE_CHECK_VERSION}, synthetic development set): ${ruleCheck.caught}/${ruleCheck.contradictions} contradictions flagged, ${ruleCheck.falseAlarms}/${ruleCheck.clean} false alarms on correct answers.`);
 console.log(live && !liveReady ? `Live capability tests: NOT RUN (missing ${missingLiveInputs.join(", ")}).` : live ? "Live results saved. Clinical and Filipino language review remain pending." : "Offline fixtures only. No transcription or language-quality evidence was produced; no paid calls made.");
 console.log(`Report: ${destination}`);
 console.log(`Known model cost: $${modelUsageSummary().actualUsd.toFixed(5)}; attempted estimate: $${modelUsageSummary().estimatedUsd.toFixed(5)}. Template draft mode remains selected.`);

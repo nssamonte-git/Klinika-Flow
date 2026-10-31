@@ -1,6 +1,9 @@
 import { illustrationMatches } from "./illustrations";
 import { createHash, randomUUID } from "node:crypto";
-import type { Encounter, Check, Claim, Fact, SheetLine, TeachBack, TeachBackAttempt, AiReview } from "./schema";
+import type { Encounter, Check, Claim, Fact, Respondent, SheetLine, TeachBack, TeachBackAttempt, AiReview } from "./schema";
+import { compareAnswer, factKindsFor, numeralize, RULE_CHECK_VERSION } from "./taglish";
+import { respondentMatches } from "./comprehension";
+export { respondentMatches };
 import { getCase } from "./cases";
 import { renderEnglish, renderFilipino, templateSheet } from "./render";
 
@@ -21,13 +24,22 @@ export function unresolvedTeachBack(e: Encounter): string[] {
   if (!e.teachBack.length) return ["teach-back"];
   return e.teachBack.filter(q => {
     const normalized = normalizeAttempts(q), active = normalized.attempts?.find(a => a.id === normalized.activeAttemptId);
-    return !!e.teachBackSkip.trim() || q.sheetFingerprint !== current || !active || active.sheetFingerprint !== current || active.outcome !== "understood" || !active.reviewer || !active.analysis || active.analysis.sheetFingerprint !== current;
+    return !!e.teachBackSkip.trim() || q.sheetFingerprint !== current || !active || active.sheetFingerprint !== current || active.outcome !== "understood" || !active.reviewer || !active.analysis || active.analysis.sheetFingerprint !== current ||
+      (!!active.ruleCheck?.findings.length && !active.overrideReason) || !respondentMatches(e, q, active);
   }).map(q => q.id).sort();
 }
 export function teachBackStateFingerprint(e: Encounter): string {
-  return fingerprint({ sheet: sheetFingerprint(e), skip: e.teachBackSkip,
+  return fingerprint({ sheet: sheetFingerprint(e), skip: e.teachBackSkip, ...(e.companion ? { companion: e.companion } : {}),
     questions: e.teachBack.map(q => { const normalized = normalizeAttempts(q), active = normalized.attempts?.find(a => a.id === normalized.activeAttemptId);
-      return { id: q.id, sheet: q.sheetFingerprint, active }; }) });
+      return { id: q.id, sheet: q.sheetFingerprint, active, ...(q.requiredRespondent ? { required: q.requiredRespondent } : {}) }; }) });
+}
+export const questionLines = (e: Encounter, questionId: string) => e.lines.filter(l => (factKindsFor[questionId] ?? []).includes(l.fact.kind));
+/** Runs the free deterministic Taglish check on the attempt's current transcript. */
+export function applyRuleCheck(e: Encounter, q: TeachBack, attempt: TeachBackAttempt): TeachBackAttempt {
+  const transcript = attempt.correctedTranscript ?? attempt.rawTranscript;
+  attempt.ruleCheck = transcript?.trim() ? { parserVersion: RULE_CHECK_VERSION, findings: compareAnswer(questionLines(e, q.id), transcript), sheetFingerprint: q.sheetFingerprint } : null;
+  attempt.overrideReason = null;
+  return attempt;
 }
 export function currentPrintException(e: Encounter): boolean {
   const x = e.printException, unresolved = unresolvedTeachBack(e);
@@ -56,10 +68,10 @@ export function projectAttempt(q: TeachBack) {
   q.transcriptSource = a.correctedTranscript ? "human-corrected" : a.rawTranscript ? "live" : undefined;
   q.transcription = a.transcription ?? undefined; q.analysis = a.analysis; q.outcome = a.outcome;
 }
-export function startAttempt(q: TeachBack): TeachBackAttempt {
+export function startAttempt(q: TeachBack, respondent: Respondent = q.requiredRespondent ?? "patient"): TeachBackAttempt {
   activeAttempt(q);
   const attempt: TeachBackAttempt = { id: randomUUID(), sheetFingerprint: q.sheetFingerprint, createdAt: new Date().toISOString(), audioAvailable: false,
-    rawTranscript: null, correctedTranscript: null, transcription: null, analysis: null, outcome: "pending", reviewer: null, decidedAt: null };
+    rawTranscript: null, correctedTranscript: null, transcription: null, analysis: null, outcome: "pending", reviewer: null, decidedAt: null, respondent };
   q.attempts!.push(attempt); q.activeAttemptId = attempt.id; projectAttempt(q); return attempt;
 }
 export function reviewReady(review: AiReview | null | undefined, current: string) {
@@ -70,11 +82,17 @@ export function savedReview(e: Encounter, stage: "note" | "sheet"): AiReview {
 }
 const equalFact = (a: Fact, b: Fact) => fingerprint(a) === fingerprint(b);
 export function normalize(s: string): string {
-  return s.toLowerCase().replace(/limang daan/g, "500").replace(/tatlong beses sa isang araw/g, "3 times daily")
+  const phrases = s.toLowerCase().replace(/limang daan/g, "500").replace(/tatlong beses sa isang araw/g, "3 times daily")
     .replace(/tatlong araw/g, "3 days").replace(/pagkatapos kumain/g, "after meals")
     .replace(/hindi bumababa ang lagnat/g, "fever does not go down").replace(/nahihirapang? huminga/g, "difficulty breathing")
     .replace(/bumalik agad/g, "return immediately").replace(/magpahinga at uminom ng tubig/g, "rest and drink water")
-    .replace(/huwag uminom ng antibiotic/g, "do not take antibiotics").replace(/[^a-z0-9\s-]/g, " ").replace(/\s+/g, " ").trim();
+    .replace(/huwag uminom ng antibiotic/g, "do not take antibiotics").replace(/huwag uminom ng ibuprofen o aspirin/g, "do not take ibuprofen or aspirin")
+    .replace(/(?:may )?matinding pananakit ng tiyan/g, "severe abdominal pain").replace(/tuloy-tuloy ang pagsusuka/g, "persistent vomiting")
+    .replace(/(?:may )?pagdurugo ng gilagid o ilong/g, "bleeding gums or nose").replace(/uminom ng maraming tubig o likido/g, "drink plenty of fluids")
+    .replace(/kung may lagnat/g, "if fever");
+  // Remaining Filipino, English and Spanish-derived number words become digits through the shared Taglish reader.
+  return numeralize(phrases).replace(/\bkada (\d+) na oras\b/g, "every $1 hours").replace(/\b(\d+) beses sa 1 araw\b/g, "$1 times daily")
+    .replace(/\bsa loob ng (\d+) araw\b/g, "$1 days").replace(/[^a-z0-9\s-]/g, " ").replace(/\s+/g, " ").trim();
 }
 const includes = (text: string, value: string) => value.length > 0 && ` ${normalize(text)} `.includes(` ${normalize(value)} `);
 export function checkEncounter(e: Encounter): Check[] {
@@ -115,7 +133,7 @@ export function checkEncounter(e: Encounter): Check[] {
   // Conservative completeness: every clinician turn with an instruction cue must be represented.
   for (const t of e.turns.filter(t => t.speaker === "clinician")) {
     if (/\b(mg|return|follow-up|bumalik|huwag|magpahinga|take|uminom)\b/i.test(t.text) && !e.claims.some(c => c.sourceTurnIds.includes(t.id))) add(`omission-${t.id}`, t.id, "A clinician instruction turn is missing from the note.");
-    for (const cue of ["fever does not go down", "difficulty breathing", "do not take antibiotics"]) {
+    for (const cue of ["fever does not go down", "difficulty breathing", "do not take antibiotics", "do not take ibuprofen or aspirin", "severe abdominal pain", "persistent vomiting", "bleeding gums or nose"]) {
       if (includes(t.text, cue) && !e.claims.some(c => c.sourceTurnIds.includes(t.id) && includes(renderEnglish(c.fact), cue))) add(`omission-${t.id}-${cue}`, t.id, `Possibly omitted instruction: ${cue}.`);
     }
     if (/\b(follow-up|followup)\b/i.test(t.text) && !e.claims.some(c => c.fact.kind === "followup" && c.sourceTurnIds.includes(t.id))) add(`followup-${t.id}`, t.id, "Follow-up instruction is missing.");
@@ -176,28 +194,35 @@ export function approveSheet(e: Encounter, reviewer: string, wordingReviewed: bo
 }
 export function makeTeachBack(e: Encounter, savedDemo = e.mode === "saved"): TeachBack[] {
   if (!hasCurrentSheetApproval(e)) throw new WorkflowError("Approve the instruction sheet first.");
-  const groups: [string, string, Fact["kind"][]][] = [
-    ["medicine", "Ano ang inyong mga bilin tungkol sa gamot?", ["medication", "negation"]],
-    ["warning", "Kailan kayo dapat bumalik agad?", ["warning"]],
-    ["followup", "Kailan ang susunod ninyong balik?", ["followup"]],
+  const groups: [string, string][] = [
+    ["medicine", "Ano ang inyong mga bilin tungkol sa gamot?"],
+    ["warning", "Kailan kayo dapat bumalik agad?"],
+    ["followup", "Kailan ang susunod ninyong balik?"],
   ];
-  return groups.filter(([, , kinds]) => e.lines.some(l => kinds.includes(l.fact.kind))).map(([id, question, kinds]) => {
-    const relevant = e.lines.filter(l => kinds.includes(l.fact.kind));
+  const c = getCase(e.caseId);
+  return groups.filter(([id]) => questionLines(e, id).length).map(([id, question]) => {
+    const relevant = questionLines(e, id);
     const expected = relevant.map(l => l.text).join(" ");
     const current = sheetFingerprint(e);
-    const plantedWarning = savedDemo && id === "warning" && relevant.some(l => l.fact.urgency === "immediate");
-    const answer = plantedWarning ? "Babalik ako pagkatapos ng tatlong araw kung may babala." : expected;
-    const findings = plantedWarning ? [{ category: "changed" as const, sourceLineIds: relevant.filter(l => l.fact.urgency === "immediate").map(l => l.id), expectedQuote: relevant.find(l => l.fact.urgency === "immediate")!.text, responseQuote: "pagkatapos ng tatlong araw", explanation: "Saved synthetic answer delays an immediate return. Reviewer must explain the correct timing and record the outcome." }] : [];
-    const analysis: TeachBack["analysis"] = savedDemo ? { status: "saved", transcript: answer, findings, model: "none", promptVersion: "saved-synthetic@1", latencyMs: null, costUsd: null, sheetFingerprint: current } : null;
+    const requiredRespondent: Respondent = e.companion?.present && c?.companion?.answers.includes(id) ? "companion" : "patient";
+    const planted = savedDemo ? c?.plantedAnswers ? c.plantedAnswers[id] : id === "warning" && relevant.some(l => l.fact.urgency === "immediate") ? { transcript: "Babalik ako pagkatapos ng tatlong araw kung may babala.", respondent: "patient" as const } : undefined : undefined;
+    const answer = planted?.transcript ?? expected;
+    const q: TeachBack = { id, question, expected, outcome: "pending", sheetFingerprint: current, audioAvailable: false, analysis: null, attempts: [], requiredRespondent };
     const attempt: TeachBackAttempt = { id: randomUUID(), sheetFingerprint: current, createdAt: new Date().toISOString(), audioAvailable: false,
-      rawTranscript: savedDemo ? answer : null, correctedTranscript: null, transcription: null, analysis, outcome: "pending", reviewer: null, decidedAt: null };
-    return { id, question, expected, outcome: "pending", sheetFingerprint: current,
-      audioAvailable: false, analysis, attempts: [attempt], activeAttemptId: attempt.id };
+      rawTranscript: savedDemo ? answer : null, correctedTranscript: null, transcription: null, analysis: null, outcome: "pending", reviewer: null, decidedAt: null,
+      respondent: planted?.respondent ?? requiredRespondent };
+    applyRuleCheck(e, q, attempt);
+    if (savedDemo) {
+      // The simulated comparison is a labelled fixture. Case-01-style plants keep their original wording; newer plants mirror the real rule check.
+      const findings = !planted ? [] : c?.plantedAnswers ? attempt.ruleCheck?.findings ?? [] : [{ category: "changed" as const, sourceLineIds: relevant.filter(l => l.fact.urgency === "immediate").map(l => l.id), expectedQuote: relevant.find(l => l.fact.urgency === "immediate")!.text, responseQuote: "pagkatapos ng tatlong araw", explanation: "Saved synthetic answer delays an immediate return. Reviewer must explain the correct timing and record the outcome." }];
+      attempt.analysis = { status: "saved", transcript: answer, findings, model: "none", promptVersion: "saved-synthetic@1", latencyMs: null, costUsd: null, sheetFingerprint: current };
+    }
+    return { ...q, analysis: attempt.analysis, attempts: [attempt], activeAttemptId: attempt.id };
   });
 }
 export function createEncounter(id: string, caseId: string): Encounter {
   const c = getCase(caseId); if (!c) throw new WorkflowError("Unknown synthetic case.", 404);
-  return { id, caseId, title: c.title, version: 1, createdAt: new Date().toISOString(), consent: false, synthetic: true, mode: "saved", turns: structuredClone(c.turns), claims: [], lines: [], checks: [], checkedFingerprint: null, noteApproval: null, sheetApproval: null, noteReview: null, sheetReview: null, teachBack: [], teachBackArchive: [], teachBackSkip: "", printException: null, transcriptConfirmation: null, preparation: { completed: [] }, audit: [], audioAvailable: false, audioReviewed: [], sheetMode: "template", lastError: null, provenance: { transcript: "Saved, human-authored synthetic reference. No model call.", note: "Not generated", sheet: "Not generated" } };
+  return { id, caseId, title: c.title, version: 1, createdAt: new Date().toISOString(), consent: false, synthetic: true, mode: "saved", ...(c.companion ? { companion: { present: true, relation: c.companion.relation } } : {}), turns: structuredClone(c.turns), claims: [], lines: [], checks: [], checkedFingerprint: null, noteApproval: null, sheetApproval: null, noteReview: null, sheetReview: null, teachBack: [], teachBackArchive: [], teachBackSkip: "", printException: null, transcriptConfirmation: null, preparation: { completed: [] }, audit: [], audioAvailable: false, audioReviewed: [], sheetMode: "template", lastError: null, provenance: { transcript: "Saved, human-authored synthetic reference. No model call.", note: "Not generated", sheet: "Not generated" } };
 }
 export function savedNote(e: Encounter): Claim[] {
   const c = getCase(e.caseId)!;

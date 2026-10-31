@@ -1,3 +1,4 @@
+import { comprehensionLabels, comprehensionMap } from "./comprehension";
 import type { Encounter, TeachBack } from "./schema";
 import type { AgentCapability, AgentMode, AgentPlan, AgentRun, ReviewerHandoff } from "./agent-contract";
 import { AgentPlanSchema } from "./agent-contract";
@@ -76,6 +77,7 @@ export function reviewerHandoff(e: Encounter): ReviewerHandoff {
     unresolved: [...checkEncounter(e).map(c => ({ id: c.id, stage: "structural check", text: c.message })), ...(["note", "sheet"] as const).flatMap(stage => (stage === "note" ? e.noteReview : e.sheetReview)?.findings.filter(f => !f.dismissal).map(f => ({ id: f.id, stage, text: f.explanation })) ?? [])],
     answers: [...e.teachBack, ...(e.teachBackArchive ?? [])].map(original => { const q = normalizeAttempts(original), current = e.teachBack.includes(original) && q.sheetFingerprint === sheet;
       return { id: q.id, question: q.question, current, outcome: q.outcome, attempts: (q.attempts ?? []).map(a => ({ id: a.id, outcome: a.outcome, reviewer: a.reviewer, at: a.decidedAt, analysis: a.analysis?.status ?? "pending", current: current && a.id === q.activeAttemptId && a.sheetFingerprint === sheet })) }; }),
+    comprehension: comprehensionMap(e, sheet).map(r => ({ lineId: r.lineId, status: r.status, label: comprehensionLabels[r.status], required: r.required, respondent: r.attempts.find(a => a.active)?.respondent ?? null })),
     nextCheckpoints: exportReasons(e), exception: e.printException ? { current: currentPrintException(e), reviewer: e.printException.reviewer, reason: e.printException.reason } : null,
   };
 }

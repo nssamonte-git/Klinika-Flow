@@ -18,7 +18,7 @@ it("prints the approved instruction record without exposing raw consultation his
   e = approveSheet(runChecks(e), "Synthetic QA", true); e.teachBack = makeTeachBack(e);
   e.consultationTranscriptions = [{ transcript: "RAW-CONSULTATION-MUST-STAY-PRIVATE", turns: [], providerLabels: [], recordingFingerprint: "original", model: "muse-voice-transcribe-1.0", requestKey: "private-request-key", at: new Date().toISOString(), latencyMs: 1, estimatedCostUsd: 0.001 }];
   insertEncounter(owner.id, e);
-  await act(owner, e.id, "print-history-fixture", { action: "record-teach-back", expectedVersion: e.version, reviewer: "Synthetic QA", outcomes: { medicine: "understood", warning: "understood", followup: "understood" } });
+  await act(owner, e.id, "print-history-fixture", { action: "record-teach-back", expectedVersion: e.version, reviewer: "Synthetic QA", outcomes: { medicine: "understood", warning: "understood", followup: "understood" }, overrideReasons: { warning: "Synthetic QA override of planted answer" } });
   const html = renderToStaticMarkup(await PrintPage({ params: Promise.resolve({ id: e.id }) }));
   expect(html).toContain("Mga Bilin ng Doktor"); expect(html).not.toContain("Export is locked");
   expect(html).not.toContain("RAW-CONSULTATION-MUST-STAY-PRIVATE"); expect(html).not.toContain("private-request-key");

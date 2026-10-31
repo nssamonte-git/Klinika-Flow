@@ -37,10 +37,13 @@ export const TeachBackResultSchema = z.object({ findings: z.array(z.object({
   category: z.enum(["missing", "changed", "unclear"]), sourceLineIds: z.array(z.string()).min(1).max(10),
   expectedQuote: z.string().min(1).max(400), responseQuote: z.string().max(400), explanation: z.string().min(1).max(500),
 }).strict()).max(20) }).strict();
+export type TeachBackFinding = z.infer<typeof TeachBackResultSchema>["findings"][number];
+export type RuleCheck = { parserVersion: string; findings: TeachBackFinding[]; sheetFingerprint: string };
+export type Respondent = "patient" | "companion";
 export type TeachBackAnalysis = { status: "saved" | "live" | "manual"; transcript: string; findings: z.infer<typeof TeachBackResultSchema>["findings"]; model: string; promptVersion: string; latencyMs: number | null; costUsd: number | null; costBasis?: "measured-tokens" | "cache-unknown-estimate" | "unknown"; sheetFingerprint: string; reason?: string; reviewer?: string };
 export type TeachBackOutcome = "pending" | "understood" | "reexplained" | "not-understood";
-export type TeachBackAttempt = { id: string; sheetFingerprint: string; createdAt: string | null; audioAvailable: boolean; rawTranscript: string | null; correctedTranscript: string | null; transcription: { model: string; latencyMs: number; costUsd: number; costBasis?: "measured-tokens" | "cache-unknown-estimate" | "unknown" } | null; analysis: TeachBackAnalysis | null; outcome: TeachBackOutcome; reviewer: string | null; decidedAt: string | null };
-export type TeachBack = { id: string; question: string; expected: string; outcome: TeachBackOutcome; sheetFingerprint: string; audioAvailable?: boolean; transcript?: string; transcriptSource?: "live" | "human-corrected"; transcription?: { model: string; latencyMs: number; costUsd: number; costBasis?: "measured-tokens" | "cache-unknown-estimate" | "unknown" }; analysis?: TeachBackAnalysis | null; attempts?: TeachBackAttempt[]; activeAttemptId?: string };
+export type TeachBackAttempt = { id: string; sheetFingerprint: string; createdAt: string | null; audioAvailable: boolean; rawTranscript: string | null; correctedTranscript: string | null; transcription: { model: string; latencyMs: number; costUsd: number; costBasis?: "measured-tokens" | "cache-unknown-estimate" | "unknown" } | null; analysis: TeachBackAnalysis | null; outcome: TeachBackOutcome; reviewer: string | null; decidedAt: string | null; ruleCheck?: RuleCheck | null; overrideReason?: string | null; respondent?: Respondent };
+export type TeachBack = { id: string; question: string; expected: string; outcome: TeachBackOutcome; sheetFingerprint: string; audioAvailable?: boolean; transcript?: string; transcriptSource?: "live" | "human-corrected"; transcription?: { model: string; latencyMs: number; costUsd: number; costBasis?: "measured-tokens" | "cache-unknown-estimate" | "unknown" }; analysis?: TeachBackAnalysis | null; attempts?: TeachBackAttempt[]; activeAttemptId?: string; requiredRespondent?: Respondent };
 export type SpeakerMapping = { recordingFingerprint: string; roles: Record<string, "clinician" | "patient" | "unknown">; reviewer: string; confirmedAt: string };
 export type PrintException = { reviewer: string; reason: string; at: string; sheetFingerprint: string; attemptFingerprint: string; unresolvedQuestionIds: string[] };
 export type TranscriptConfirmation = { fingerprint: string; reviewer: string; at: string; recordingFingerprint: string | null };
@@ -67,6 +70,7 @@ export type Encounter = {
   recordingFingerprint?: string | null; speakerMapping?: SpeakerMapping | null;
   consultationTranscriptions?: ConsultationTranscription[];
   printException?: PrintException | null;
+  companion?: { present: boolean; relation: string } | null;
   transcriptConfirmation?: TranscriptConfirmation | null; preparation?: PreparationProgress;
   documents?: SourceDocument[];
   illustrations?: IllustrationAttachment[];
@@ -76,5 +80,5 @@ export type Encounter = {
   provenance: { transcript: string; note: string; sheet: string }; audioReviewed: string[];
   sheetMode: "template" | "model"; lastError: string | null;
 };
-export type Case = { id: string; title: string; subtitle: string; patient: string; turns: Turn[]; claims: Claim[] };
+export type Case = { id: string; title: string; subtitle: string; patient: string; turns: Turn[]; claims: Claim[]; companion?: { relation: string; answers: string[] }; plantedAnswers?: Record<string, { transcript: string; respondent: Respondent }> };
 export const emptyFact: Fact = { kind: "advice", medicine: "", dose: "", quantity: "", frequency: "", duration: "", timing: "", condition: "", urgency: "none", delayDays: null, date: "", action: "", negated: false };

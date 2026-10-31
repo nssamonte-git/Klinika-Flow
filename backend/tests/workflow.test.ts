@@ -5,7 +5,7 @@ import { templateSheet, renderFilipino } from "../src/domain/render";
 import { activeAttempt, approveNote, approveSheet, checkEncounter, createEncounter, exportReasons, fingerprint, invalidate, makeTeachBack, noteFingerprint, projectAttempt, runChecks, savedNote, savedReview, sheetFingerprint, teachBackStateFingerprint, unresolvedTeachBack } from "../src/domain/workflow";
 function note(caseId = "case-01"): Encounter { const e = createEncounter("test", caseId); e.consent = true; e.claims = savedNote(e); e.noteReview = savedReview(e, "note"); return runChecks(e); }
 function sheet(): Encounter { let e = approveNote(note(), "Demo", true); e.lines = templateSheet(e.claims); e.sheetReview = savedReview(e, "sheet"); return runChecks(e); }
-function approved(): Encounter { let e = approveSheet(sheet(), "Demo", true); e.teachBack = makeTeachBack(e); for (const q of e.teachBack) { const attempt = activeAttempt(q); attempt.outcome = "understood"; attempt.reviewer = "Demo"; attempt.decidedAt = new Date().toISOString(); projectAttempt(q); } return e; }
+function approved(): Encounter { let e = approveSheet(sheet(), "Demo", true); e.teachBack = makeTeachBack(e); for (const q of e.teachBack) { const attempt = activeAttempt(q); attempt.outcome = "understood"; attempt.reviewer = "Demo"; if (attempt.ruleCheck?.findings.length) attempt.overrideReason = "Synthetic QA override of planted answer"; attempt.decidedAt = new Date().toISOString(); projectAttempt(q); } return e; }
 describe("reference and approval flow", () => {
   it.each(cases)("keeps $id free of structural errors", c => expect(checkEncounter(note(c.id))).toEqual([]));
   it("completes an approved encounter", () => expect(exportReasons(approved())).toEqual([]));

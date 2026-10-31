@@ -5,14 +5,14 @@ import { compatibleIllustrations, ILLUSTRATION_VERSION } from "../domain/illustr
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { DocumentDecisionSchema, ClaimSchema, LineSchema, TurnSchema, type Encounter } from "../domain/schema";
-import { activeAttempt, approveNote, approveSheet, buildSheet, checkEncounter, fingerprint, hasCurrentNoteApproval, hasCurrentSheetApproval, invalidate, makeTeachBack, projectAttempt, reviewFingerprint, runChecks, savedNote, savedReview, sheetFingerprint, startAttempt, teachBackStateFingerprint, transcriptFingerprint, unresolvedTeachBack, WorkflowError } from "../domain/workflow";
+import { activeAttempt, applyRuleCheck, approveNote, approveSheet, buildSheet, checkEncounter, fingerprint, hasCurrentNoteApproval, hasCurrentSheetApproval, invalidate, makeTeachBack, projectAttempt, questionLines, reviewFingerprint, runChecks, savedNote, savedReview, sheetFingerprint, startAttempt, teachBackStateFingerprint, transcriptFingerprint, unresolvedTeachBack, WorkflowError } from "../domain/workflow";
 import { beginJob, endJob, loadAudio, loadSourceDocument, loadEncounter, loadSpokenQuestionAudio, loadTeachBackAudio, saveEncounter, workspaceOwner } from "./db";
 import { extractDocument, analyzeTeachBack, generateCandidateSheet, generateNote, MODEL, proposeNoteCorrection, reviewNote, reviewSheet, selectPlanQuestionLines, transcribe } from "./meta";
 import { requireStudio } from "./http";
 import { dismissReviewFinding, verifyCorrectionProposal, verifyReviewFindings, verifyTeachBackFindings } from "./review";
 import type { AiReview } from "../domain/schema";
 export const ActionSchema = z.object({
-  action: z.enum(["attach-illustration", "remove-illustration", "extract-document", "accept-document", "document-demo", "consent", "transcript", "map-speakers", "confirm-transcript", "generate-note", "edit-note", "checks", "approve-note", "propose-note-correction", "accept-note-proposal", "reject-note-proposal", "generate-sheet", "edit-sheet", "approve-sheet", "ask-plan-question", "transcribe-spoken-question", "edit-spoken-question-transcript", "confirm-spoken-question", "ask-spoken-plan-question", "teach-back", "start-teach-back-attempt", "record-teach-back", "record-print-exception", "revoke-print-exception", "plant-error", "run-note-review", "run-sheet-review", "dismiss-review", "manual-review", "transcribe-teach-back", "edit-teach-back-transcript", "analyze-teach-back", "manual-teach-back"]),
+  action: z.enum(["attach-illustration", "remove-illustration", "extract-document", "accept-document", "document-demo", "consent", "transcript", "map-speakers", "confirm-transcript", "generate-note", "edit-note", "checks", "approve-note", "propose-note-correction", "accept-note-proposal", "reject-note-proposal", "generate-sheet", "edit-sheet", "approve-sheet", "ask-plan-question", "transcribe-spoken-question", "edit-spoken-question-transcript", "confirm-spoken-question", "ask-spoken-plan-question", "teach-back", "start-teach-back-attempt", "set-companion", "set-required-respondent", "set-respondent", "record-teach-back", "record-print-exception", "revoke-print-exception", "plant-error", "run-note-review", "run-sheet-review", "dismiss-review", "manual-review", "transcribe-teach-back", "edit-teach-back-transcript", "analyze-teach-back", "manual-teach-back"]),
   lineId: z.string().max(40).optional(), illustrationId: z.string().max(40).optional(),
   documentId: z.string().max(40).optional(), documentDecisions: z.array(DocumentDecisionSchema).min(1).max(40).optional(),
   expectedVersion: z.number().int().positive(), value: z.boolean().optional(),
@@ -22,6 +22,7 @@ export const ActionSchema = z.object({
   speakerRoles: z.record(z.string().min(1).max(40), z.enum(["clinician", "patient", "unknown"])).optional(),
   stage: z.enum(["note", "sheet"]).optional(), findingId: z.string().max(100).optional(), proposalId: z.string().max(100).optional(), questionId: z.string().max(40).optional(), question: z.string().max(500).optional(), transcript: z.string().max(3000).optional(),
   outcomes: z.record(z.string(), z.enum(["pending", "understood", "reexplained", "not-understood"])).optional(), reason: z.string().max(500).optional(),
+  overrideReasons: z.record(z.string(), z.string().max(500)).optional(), respondent: z.enum(["patient", "companion"]).optional(), relation: z.string().max(40).optional(),
 }).strict();
 type Action = z.infer<typeof ActionSchema>;
 export async function act(owner: WorkspaceSession, id: string, requestKey: string, input: Action): Promise<Encounter> {
@@ -265,9 +266,10 @@ async function performAction(owner: WorkspaceSession, id: string, requestKey: st
       case "start-teach-back-attempt": {
         const q = e.teachBack.find(t => t.id === input.questionId && t.sheetFingerprint === sheetFingerprint(e));
         if (!q || !hasCurrentSheetApproval(e)) throw new WorkflowError("Approve the current sheet and select a question.");
-        const attempt = startAttempt(q);
+        if (input.respondent === "companion" && !e.companion?.present) throw new WorkflowError("Record the companion before choosing them as the respondent.", 400);
+        const attempt = startAttempt(q, input.respondent);
         if (owner.role === "judge") {
-          attempt.rawTranscript = q.expected;
+          attempt.rawTranscript = q.expected; applyRuleCheck(e, q, attempt);
           attempt.analysis = { status: "saved", transcript: q.expected, findings: [], model: "none", promptVersion: "saved-repeat-fixture@1", latencyMs: null, costUsd: null, sheetFingerprint: q.sheetFingerprint };
           projectAttempt(q);
         }
@@ -282,7 +284,7 @@ async function performAction(owner: WorkspaceSession, id: string, requestKey: st
         const recorded = loadTeachBackAudio(owner.id, id, q.id, q.sheetFingerprint);
         if (!recorded) throw new WorkflowError("The current answer recording is missing.");
         const result = await transcribe(recorded, "PUSH_TO_TALK");
-        const attempt = activeAttempt(q); attempt.rawTranscript = result.transcript; attempt.correctedTranscript = null; e.printException = null;
+        const attempt = activeAttempt(q); attempt.rawTranscript = result.transcript; attempt.correctedTranscript = null; applyRuleCheck(e, q, attempt); e.printException = null;
         attempt.transcription = { model: MODEL.voice, latencyMs: result.latencyMs, costUsd: result.costUsd }; attempt.analysis = null; attempt.outcome = "pending"; attempt.reviewer = null; attempt.decidedAt = null; projectAttempt(q);
         break;
       }
@@ -290,14 +292,14 @@ async function performAction(owner: WorkspaceSession, id: string, requestKey: st
         requireStudio(owner);
         const q = e.teachBack.find(t => t.id === input.questionId && t.sheetFingerprint === sheetFingerprint(e));
         if (!q || !input.transcript?.trim()) throw new WorkflowError("Enter the corrected answer transcript.", 400);
-        const attempt = activeAttempt(q); attempt.correctedTranscript = input.transcript.trim(); attempt.analysis = null; attempt.outcome = "pending"; attempt.reviewer = null; attempt.decidedAt = null; projectAttempt(q); e.printException = null;
+        const attempt = activeAttempt(q); attempt.correctedTranscript = input.transcript.trim(); applyRuleCheck(e, q, attempt); attempt.analysis = null; attempt.outcome = "pending"; attempt.reviewer = null; attempt.decidedAt = null; projectAttempt(q); e.printException = null;
         break;
       }
       case "analyze-teach-back": {
         requireStudio(owner);
         const q = e.teachBack.find(t => t.id === input.questionId && t.sheetFingerprint === sheetFingerprint(e));
         if (!q?.transcript || !hasCurrentSheetApproval(e)) throw new WorkflowError("Transcribe the current answer first.");
-        const lines = e.lines.filter(l => q.id === "medicine" ? ["medication", "negation"].includes(l.fact.kind) : q.id === "warning" ? l.fact.kind === "warning" : l.fact.kind === "followup");
+        const lines = questionLines(e, q.id);
         const result = await analyzeTeachBack(q.question, lines.map(l => ({ id: l.id, text: l.text })), q.transcript);
         const attempt = activeAttempt(q); e.printException = null;
         attempt.analysis = { status: "live", transcript: q.transcript, findings: verifyTeachBackFindings(result.data.findings, lines, q.transcript), model: MODEL.text, promptVersion: result.promptVersion, latencyMs: result.latencyMs, costUsd: result.costUsd, costBasis: result.costBasis, sheetFingerprint: sheetFingerprint(e) }; attempt.outcome = "pending"; attempt.reviewer = null; attempt.decidedAt = null; projectAttempt(q);
@@ -317,9 +319,12 @@ async function performAction(owner: WorkspaceSession, id: string, requestKey: st
         if (!input.reviewer?.trim()) throw new WorkflowError("Enter the reviewer name before recording an outcome.", 400);
         for (const q of e.teachBack) {
           const outcome = input.outcomes[q.id]; if (!outcome) continue;
-          const attempt = activeAttempt(q);
+          const attempt = activeAttempt(q), override = input.overrideReasons?.[q.id]?.trim() ?? "";
           if (outcome !== "pending" && !attempt.analysis) throw new WorkflowError("Compare or manually review this answer before recording its outcome.");
-          attempt.outcome = outcome; attempt.reviewer = input.reviewer.trim(); attempt.decidedAt = new Date().toISOString(); projectAttempt(q);
+          if (outcome !== "pending" && e.companion?.present && !attempt.respondent) throw new WorkflowError("Record who gave this answer, the patient or the companion, before recording its outcome.", 400);
+          if (outcome === "understood" && attempt.ruleCheck?.findings.length && override.length < 8) throw new WorkflowError("The rule check flagged this answer. Explain again and record another answer, or give a reason of at least 8 characters for marking it understood.", 400);
+          attempt.outcome = outcome; attempt.reviewer = input.reviewer.trim(); attempt.decidedAt = new Date().toISOString();
+          attempt.overrideReason = outcome === "understood" && attempt.ruleCheck?.findings.length ? override : null; projectAttempt(q);
         }
         e.teachBackSkip = ""; e.printException = null; break;
       }
@@ -332,6 +337,28 @@ async function performAction(owner: WorkspaceSession, id: string, requestKey: st
         break;
       }
       case "revoke-print-exception": e.printException = null; break;
+      case "set-companion": {
+        const present = !!input.value, relation = input.relation?.trim() ?? "";
+        if (present && !relation) throw new WorkflowError("Name the companion's relationship, for example anak or asawa.", 400);
+        e.companion = present ? { present, relation } : null;
+        // Without a companion, every question returns to the patient; earlier companion answers stay in history but no longer satisfy print.
+        if (!present) for (const q of e.teachBack) q.requiredRespondent = "patient";
+        e.printException = null; break;
+      }
+      case "set-required-respondent": {
+        const q = e.teachBack.find(t => t.id === input.questionId && t.sheetFingerprint === sheetFingerprint(e));
+        if (!q || !input.respondent) throw new WorkflowError("Select a current question and who must answer it.", 400);
+        if (input.respondent === "companion" && !e.companion?.present) throw new WorkflowError("Record the companion first.", 400);
+        q.requiredRespondent = input.respondent; e.printException = null; break;
+      }
+      case "set-respondent": {
+        const q = e.teachBack.find(t => t.id === input.questionId && t.sheetFingerprint === sheetFingerprint(e));
+        if (!q || !input.respondent) throw new WorkflowError("Select a current question and who answered.", 400);
+        if (input.respondent === "companion" && !e.companion?.present) throw new WorkflowError("Record the companion first.", 400);
+        const attempt = activeAttempt(q);
+        if (attempt.respondent !== input.respondent) { attempt.respondent = input.respondent; attempt.outcome = "pending"; attempt.reviewer = null; attempt.decidedAt = null; attempt.overrideReason = null; projectAttempt(q); }
+        e.printException = null; break;
+      }
     }
     e.version = previous.version + 1; e.lastError = null;
     if (["confirm-transcript", "generate-note", "run-note-review", "approve-note", "generate-sheet", "run-sheet-review", "approve-sheet"].includes(input.action)) {

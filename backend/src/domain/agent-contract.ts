@@ -38,6 +38,7 @@ export type ReviewerHandoff = {
   unresolved: { id: string; stage: string; text: string }[];
   answers: { id: string; question: string; current: boolean; outcome: string; attempts: { id: string; outcome: string; reviewer: string | null; at: string | null; analysis: string; current: boolean }[] }[];
   nextCheckpoints: string[]; exception: { current: boolean; reviewer: string; reason: string } | null;
+  comprehension: { lineId: string; status: string; label: string; required: string | null; respondent: string | null }[];
 };
 export type AgentView = {
   runs: AgentRun[]; handoff: ReviewerHandoff;

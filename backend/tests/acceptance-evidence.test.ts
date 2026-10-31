@@ -101,4 +101,4 @@ it("runs the CLI snapshot/compare end to end, writes private files, and refuses 
   expect(run("snapshot", "--encounter", "case-a", "--out", "elsewhere.json").status).toBe(1);
   const failed = run("snapshot", "--encounter", "private-invalid@example.test", "--out", "backend/eval/runs/invalid.json");
   expect(failed.status).toBe(1); expect(failed.stderr).not.toContain("private-invalid@example.test");
-});
+}, 20_000); // Spawns several tsx processes; slow machines exceed the 5s default.

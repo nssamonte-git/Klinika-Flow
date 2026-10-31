@@ -2,7 +2,7 @@ import "server-only";
 import { randomUUID } from "node:crypto";
 import { AgentCommandSchema, AgentPlanSchema, type AgentCommand, type AgentEvent, type AgentRun, type AgentView } from "../domain/agent-contract";
 import { agentCapabilities, agentFingerprint, fixtureAgentPlan, requireAgentStart, reviewerHandoff, validateAgentPlan } from "../domain/agent-policy";
-import { checkEncounter, fingerprint, invalidate, noteFingerprint, projectAttempt, runChecks, savedReview, sheetFingerprint, startAttempt, WorkflowError } from "../domain/workflow";
+import { applyRuleCheck, checkEncounter, fingerprint, invalidate, noteFingerprint, projectAttempt, runChecks, savedReview, sheetFingerprint, startAttempt, WorkflowError } from "../domain/workflow";
 import type { Encounter } from "../domain/schema";
 import { db, loadEncounter, saveEncounter, workspaceOwner } from "./db-core";
 import { runAsAccount } from "./accounts";
@@ -57,7 +57,7 @@ async function command(session: WorkspaceSession, id: string, requestKey: string
       const q = e.teachBack.find(q => q.id === input.questionId)!;
       const line = e.lines.find(l => q.id === "warning" ? l.fact.kind === "warning" : q.id === "followup" ? l.fact.kind === "followup" : ["medication", "negation"].includes(l.fact.kind));
       if (!line) throw new WorkflowError("Approved fixture line unavailable.");
-      const a = startAttempt(q); a.rawTranscript = "Hindi ko po alam.";
+      const a = startAttempt(q); a.rawTranscript = "Hindi ko po alam."; applyRuleCheck(e, q, a);
       a.analysis = { status: "saved", transcript: a.rawTranscript, findings: [{ category: "unclear", sourceLineIds: [line.id], expectedQuote: line.text, responseQuote: a.rawTranscript, explanation: "Labelled unclear-answer fixture; reviewer clarification required." }], model: "none", promptVersion: "saved-agent-unclear@1", latencyMs: null, costUsd: null, sheetFingerprint: sheetFingerprint(e) }; projectAttempt(q); e.printException = null;
     }
     e.version++;

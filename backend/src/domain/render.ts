@@ -8,6 +8,11 @@ const filipino: Record<string, string> = {
   "after meals": "pagkatapos kumain", "at night": "sa gabi",
   "3 days": "3 araw", "5 days": "5 araw",
   "1 tablet": "1 tableta",
+  // Case-04 drafts: pending clinician and native-speaker review like every other entry.
+  "every 6 hours": "kada 6 na oras", "if fever": "kung may lagnat",
+  "severe abdominal pain": "may matinding pananakit ng tiyan", "persistent vomiting": "tuloy-tuloy ang pagsusuka",
+  "bleeding gums or nose": "may pagdurugo ng gilagid o ilong", "take ibuprofen or aspirin": "uminom ng ibuprofen o aspirin",
+  "drink plenty of fluids": "Uminom ng maraming tubig o likido.",
 };
 const translate = (s: string) => filipino[s] ?? s;
 export function renderEnglish(f: Fact): string {
